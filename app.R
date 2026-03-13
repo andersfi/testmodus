@@ -1,5 +1,4 @@
 library(shiny)
-library(bslib)
 library(ggplot2)
 library(maps)
 library(jsonlite)
@@ -43,27 +42,28 @@ hent_gbif <- function(taxon_key, ar_fra = 2025) {
 }
 
 # --- UI ---
-ui <- page_sidebar(
-  title = "Ferskvassfisk i Noreg – GBIF",
-  theme = bs_theme(bootswatch = "flatly"),
+ui <- fluidPage(
+  titlePanel("Ferskvassfisk i Noreg \u2013 GBIF"),
 
-  sidebar = sidebar(
-    width = 280,
-    textInput("sok", "Søk etter art:", placeholder = "t.d. Salmo trutta"),
-    actionButton("sok_btn", "Søk", class = "btn-primary w-100"),
-    hr(),
-    uiOutput("resultat_ui"),
-    hr(),
-    sliderInput("ar_fra", "Observasjonar frå og med år:",
-                min = 2000, max = 2025, value = 2025, step = 1, sep = ""),
-    actionButton("hent_btn", "Vis på kart", class = "btn-success w-100"),
-    hr(),
-    uiOutput("info_ui")
-  ),
+  sidebarLayout(
+    sidebarPanel(
+      width = 3,
+      textInput("sok", "S\u00f8k etter art:", placeholder = "t.d. Salmo trutta"),
+      actionButton("sok_btn", "S\u00f8k", class = "btn-primary"),
+      hr(),
+      uiOutput("resultat_ui"),
+      hr(),
+      sliderInput("ar_fra", "Observasjonar fr\u00e5 og med \u00e5r:",
+                  min = 2000, max = 2025, value = 2025, step = 1, sep = ""),
+      actionButton("hent_btn", "Vis p\u00e5 kart", class = "btn-success"),
+      hr(),
+      uiOutput("info_ui")
+    ),
 
-  card(
-    full_screen = TRUE,
-    plotOutput("kart", height = "680px")
+    mainPanel(
+      width = 9,
+      plotOutput("kart", height = "700px")
+    )
   )
 )
 
@@ -74,7 +74,6 @@ server <- function(input, output, session) {
   valt_art     <- reactiveVal(NULL)
   obs_data     <- reactiveVal(data.frame())
 
-  # Søk
   observeEvent(input$sok_btn, {
     req(nchar(trimws(input$sok)) > 1)
     res <- sok_art(trimws(input$sok))
@@ -89,14 +88,12 @@ server <- function(input, output, session) {
     valalternativ <- setNames(as.character(res$key), res$scientificName)
     tagList(
       selectInput("valt_key", "Vel art:", choices = valalternativ),
-      tags$small(class = "text-muted", "Trykk 'Vis på kart' for å hente data")
+      tags$small("Trykk 'Vis p\u00e5 kart' for \u00e5 hente data")
     )
   })
 
-  # Hent observasjonar
   observeEvent(input$hent_btn, {
     req(input$valt_key)
-    showNotification("Hentar data frå GBIF...", type = "message", duration = 3)
     data <- hent_gbif(input$valt_key, input$ar_fra)
     obs_data(data)
     res  <- sokeresultat()
@@ -105,17 +102,13 @@ server <- function(input, output, session) {
   })
 
   output$info_ui <- renderUI({
-    obs  <- obs_data()
-    art  <- valt_art()
+    obs <- obs_data()
+    art <- valt_art()
     if (is.null(art) || nrow(obs) == 0) return(NULL)
-    tagList(
-      tags$b(art$namn),
-      tags$br(),
-      tags$span(paste0(nrow(obs), " observasjonar funne"))
-    )
+    tagList(tags$b(art$namn), tags$br(),
+            tags$span(paste0(nrow(obs), " observasjonar")))
   })
 
-  # Kart
   output$kart <- renderPlot({
     obs <- obs_data()
     art <- valt_art()
@@ -126,7 +119,7 @@ server <- function(input, output, session) {
         aes(x = long, y = lat, group = group),
         fill = "grey75", color = "grey40", linewidth = 0.3
       ) +
-      coord_map("mercator", xlim = c(4, 32), ylim = c(57, 72)) +
+      coord_quickmap(xlim = c(4, 32), ylim = c(57, 72)) +
       scale_x_continuous(breaks = seq(4, 32, by = 4),
                          labels = paste0(seq(4, 32, by = 4), "\u00b0\u00d8")) +
       scale_y_continuous(breaks = seq(58, 72, by = 2),
@@ -149,9 +142,9 @@ server <- function(input, output, session) {
                    aes(x = decimalLongitude, y = decimalLatitude),
                    color = "#2ca02c", size = 2.5, alpha = 0.75) +
         labs(title    = art$namn,
-             subtitle = paste0("GBIF – Noreg – n = ", nrow(obs), " observasjonar"))
+             subtitle = paste0("GBIF \u2013 Noreg \u2013 n = ", nrow(obs), " observasjonar"))
     } else {
-      p <- p + labs(title = "Søk etter ein art og trykk 'Vis på kart'")
+      p <- p + labs(title = "S\u00f8k etter ein art og trykk 'Vis p\u00e5 kart'")
     }
     p
   })
