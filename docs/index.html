@@ -1,28 +1,172 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Shiny App</title>
-    <script
-      src="./shinylive/load-shinylive-sw.js"
-      type="module"
-    ></script>
-    <script type="module">
-      import { runExportedApp } from "./shinylive/shinylive.js";
-      runExportedApp({
-        id: "root",
-        appEngine: "r",
-        relPath: "",
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ferskvassfisk i Noreg – GBIF</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
+
+    header {
+      background: #2c3e50; color: white;
+      padding: 10px 16px; display: flex; align-items: center; gap: 12px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.1rem; white-space: nowrap; }
+
+    #sokfelt {
+      display: flex; gap: 6px; flex: 1; flex-wrap: wrap; align-items: center;
+    }
+    #sokfelt input {
+      padding: 6px 10px; border: none; border-radius: 4px;
+      font-size: 0.95rem; width: 200px;
+    }
+    #sokfelt button {
+      padding: 6px 14px; border: none; border-radius: 4px;
+      background: #27ae60; color: white; cursor: pointer; font-size: 0.95rem;
+    }
+    #sokfelt button:hover { background: #219a52; }
+    #sokfelt select {
+      padding: 6px 10px; border: none; border-radius: 4px;
+      font-size: 0.9rem; max-width: 260px;
+    }
+    #arInput {
+      display: flex; align-items: center; gap: 6px; color: white; font-size: 0.9rem;
+    }
+    #arInput input { width: 60px; padding: 5px 8px; border: none; border-radius: 4px; }
+
+    #status {
+      font-size: 0.85rem; color: #ecf0f1; white-space: nowrap;
+    }
+
+    #kart { flex: 1; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🐟 Ferskvassfisk – GBIF</h1>
+
+  <div id="sokfelt">
+    <input type="text" id="sokInput" placeholder="Søk art (t.d. Esox lucius)" />
+    <button onclick="sokArt()">Søk</button>
+    <select id="artSelect" style="display:none" onchange="valtArt()"></select>
+  </div>
+
+  <div id="arInput">
+    Fra år: <input type="number" id="arFra" value="2025" min="1990" max="2026" />
+  </div>
+
+  <span id="status">Skriv inn eit artsnamn og søk</span>
+</header>
+
+<div id="kart"></div>
+
+<script>
+  // --- Kart ---
+  const kart = L.map('kart').setView([65, 15], 5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 18
+  }).addTo(kart);
+
+  let punktlag = null;
+
+  // --- Søk etter art i GBIF ---
+  async function sokArt() {
+    const query = document.getElementById('sokInput').value.trim();
+    if (!query) return;
+    setStatus('Søkjer...');
+
+    const url = `https://api.gbif.org/v1/species/suggest?q=${encodeURIComponent(query)}&limit=8&rank=SPECIES`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      const select = document.getElementById('artSelect');
+      select.innerHTML = '';
+
+      if (!data.length) { setStatus('Ingen artar funne.'); return; }
+
+      data.forEach(art => {
+        const opt = document.createElement('option');
+        opt.value = art.key;
+        opt.textContent = art.scientificName;
+        select.appendChild(opt);
       });
-    </script>
-    <link rel="stylesheet" href="./shinylive/style-resets.css" />
-    <link rel="stylesheet" href="./shinylive/shinylive.css" />
-    
-  </head>
-  <body>
-    
-    <div style="height: 100vh; width: 100vw" id="root"></div>
-    
-  </body>
+
+      select.style.display = 'block';
+      setStatus('Vel art og trykk enter, eller endre val i lista');
+      valtArt();
+    } catch (e) {
+      setStatus('Feil ved søk: ' + e.message);
+    }
+  }
+
+  // --- Hent og vis observasjonar ---
+  async function valtArt() {
+    const key   = document.getElementById('artSelect').value;
+    const arFra = document.getElementById('arFra').value;
+    if (!key) return;
+
+    setStatus('Hentar observasjonar frå GBIF...');
+    if (punktlag) kart.removeLayer(punktlag);
+
+    const base = `https://api.gbif.org/v1/occurrence/search?taxonKey=${key}&country=NO&year=${arFra},2026&hasCoordinate=true&limit=300`;
+
+    try {
+      // Hent første side
+      const res1  = await fetch(base + '&offset=0');
+      const data1 = await res1.json();
+      let alle = data1.results || [];
+
+      // Hent resten om det er fleire
+      const total = data1.count;
+      const sider = [];
+      for (let off = 300; off < Math.min(total, 3000); off += 300) {
+        sider.push(fetch(base + `&offset=${off}`).then(r => r.json()));
+      }
+      const resten = await Promise.all(sider);
+      resten.forEach(d => { alle = alle.concat(d.results || []); });
+
+      // Filtrer og vis
+      const obs = alle.filter(o => o.decimalLatitude && o.decimalLongitude);
+
+      const sirklar = obs.map(o =>
+        L.circleMarker([o.decimalLatitude, o.decimalLongitude], {
+          radius: 6, color: '#27ae60', fillColor: '#2ecc71',
+          fillOpacity: 0.75, weight: 1
+        }).bindPopup(`
+          <b>${o.scientificName || ''}</b><br>
+          ${o.locality || ''}<br>
+          ${o.eventDate ? o.eventDate.slice(0,10) : ''}<br>
+          <small>${o.institutionCode || ''}</small>
+        `)
+      );
+
+      punktlag = L.layerGroup(sirklar).addTo(kart);
+
+      const artnamn = document.getElementById('artSelect').selectedOptions[0]?.text || '';
+      setStatus(`${artnamn} – ${obs.length} observasjonar (GBIF, ≥${arFra})`);
+    } catch (e) {
+      setStatus('Feil: ' + e.message);
+    }
+  }
+
+  // Enter-tast i søkefelt
+  document.getElementById('sokInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') sokArt();
+  });
+
+  function setStatus(tekst) {
+    document.getElementById('status').textContent = tekst;
+  }
+</script>
+
+</body>
 </html>
