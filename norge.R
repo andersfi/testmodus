@@ -1,47 +1,19 @@
-# Kart over Norge med fylkesgrenser
-# Krev pakkar: ggplot2, maps, mapproj, jsonlite
-# Fylkesgrenser: ivanhjel/counties_norway_2024 (CC-lisens, kjelde: Kartverket)
+# Kart over Norge
+# Krev pakkar: ggplot2, maps, mapproj
+# Merk: fylkesgrenser krev pakken 'mapdata' (install.packages("mapdata"))
 
 library(ggplot2)
 library(maps)
-library(jsonlite)
 
-# --- Last ned fylkesgrenser frå GitHub ---
-url <- "https://raw.githubusercontent.com/ivanhjel/counties_norway_2024/main/counties_norway_2024.geojson"
-geojson <- fromJSON(url, simplifyVector = FALSE)
+# Forsøk å laste mapdata for fylkesgrenser, fall tilbake til world-data
+norge_kart <- tryCatch({
+  map_data("worldHires", region = "Norway")
+}, error = function(e) {
+  map_data("world", region = "Norway")
+})
 
-# Konverter GeoJSON til data.frame for ggplot2
-geojson_til_df <- function(features) {
-  df_list <- lapply(seq_along(features), function(i) {
-    feat <- features[[i]]
-    navn <- feat$properties$navn
-    geom <- feat$geometry
-
-    # Støttar Polygon og MultiPolygon
-    rings <- if (geom$type == "Polygon") {
-      list(geom$coordinates)
-    } else {
-      geom$coordinates  # MultiPolygon
-    }
-
-    do.call(rbind, lapply(seq_along(rings), function(j) {
-      ring <- rings[[j]][[1]]  # ytre ring
-      coords <- do.call(rbind, lapply(ring, function(p) c(p[[1]], p[[2]])))
-      data.frame(
-        long  = coords[, 1],
-        lat   = coords[, 2],
-        group = paste(i, j, sep = "_"),
-        navn  = navn
-      )
-    }))
-  })
-  do.call(rbind, df_list)
-}
-
-fylker_df <- geojson_til_df(geojson$features)
-
-# --- Lag kartet ---
-ggplot(fylker_df, aes(x = long, y = lat, group = group)) +
+# Lag kartet
+ggplot(data = norge_kart, aes(x = long, y = lat, group = group)) +
   geom_polygon(fill = "grey75", color = "grey40", linewidth = 0.4) +
   coord_map("mercator", xlim = c(4, 32), ylim = c(57, 72)) +
   scale_x_continuous(
@@ -53,7 +25,7 @@ ggplot(fylker_df, aes(x = long, y = lat, group = group)) +
     labels = paste0(seq(58, 72, by = 2), "\u00b0N")
   ) +
   labs(
-    title = "Noreg \u2013 fylkesgrenser",
+    title = "Noreg",
     x = NULL,
     y = NULL
   ) +
