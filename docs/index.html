@@ -54,7 +54,7 @@
   <h1>🐟 Ferskvassfisk – GBIF</h1>
 
   <div id="sokfelt">
-    <input type="text" id="sokInput" placeholder="Søk art (t.d. Esox lucius)" />
+    <input type="text" id="sokInput" placeholder="Søk art (t.d. ørret, gjedde)" />
     <button onclick="sokArt()">Søk</button>
     <select id="artSelect" style="display:none" onchange="valtArt()"></select>
   </div>
@@ -84,19 +84,20 @@
     if (!query) return;
     setStatus('Søkjer...');
 
-    const url = `https://api.gbif.org/v1/species/suggest?q=${encodeURIComponent(query)}&limit=8&rank=SPECIES`;
+    const url = `https://api.gbif.org/v1/species/search?q=${encodeURIComponent(query)}&limit=8&rank=SPECIES&language=nob`;
     try {
       const res = await fetch(url);
       const data = await res.json();
       const select = document.getElementById('artSelect');
       select.innerHTML = '';
 
-      if (!data.length) { setStatus('Ingen artar funne.'); return; }
+      if (!data.results || !data.results.length) { setStatus('Ingen artar funne.'); return; }
 
-      data.forEach(art => {
+      data.results.forEach(art => {
         const opt = document.createElement('option');
         opt.value = art.key;
-        opt.textContent = art.scientificName;
+        const norskNamn = art.vernacularNames?.find(v => v.language === 'nob')?.vernacularName;
+        opt.textContent = norskNamn ? `${norskNamn} (${art.scientificName})` : art.scientificName;
         select.appendChild(opt);
       });
 
